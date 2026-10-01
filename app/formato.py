@@ -19,6 +19,7 @@ Lo que NO se toca, a propósito:
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import Callable
 
@@ -55,13 +56,91 @@ _ENFASIS_DE_ENLACE = re.compile(
     r"(\*\*\*|\*\*|__|~~)(" + _ABRE + r"\d+" + _CIERRA + r")\1"
 )
 
+# El sobre JSON de una herramienta: un modelo lo devuelve si el perfil del CRM
+# trae instrucciones con ese contrato (incidente 2026-10-01).
+_SOBRE_JSON = re.compile(r"^[ \t]*```(?:json)?[ \t]*\n?(.*?)\n?[ \t]*```[ \t]*$", re.S)
+_CLAVES_TEXTO = ("text", "texto", "reply", "respuesta", "message", "mensaje", "farewell", "despedida")
+_ESCAPE_U = re.compile(r"\\u([0-9a-fA-F]{4,6})")
+# Para el sobre truncado, que ya no es JSON valido pero se ve a leguas. La
+# comilla final es opcional: un corte a media frase no debe costar el mensaje.
+_TEXTO_CRUDO = re.compile(r'"(?:text|texto|reply|respuesta)"\s*:\s*"((?:[^"\\]|\\.)*)"?')
+
 _LINEAS_EN_BLANCO = re.compile(r"\n(?:[ \t]*\n){2,}")
+
+
+def _desescapar(texto: str) -> str:
+    """Resuelve los \\uXXXX que el modelo dejó sin decodificar.
+
+    Un emoji fuera del BMP llega partido en dos mitades (\\ud83d\\udc4b): por
+    separado son surrogados inválidos y romperían el envío, así que se
+    recomponen con utf-16.
+    """
+    if "\\u" not in texto:
+        return texto
+
+    def _uno(m: "re.Match[str]") -> str:
+        try:
+            punto = int(m.group(1), 16)
+        except ValueError:
+            return m.group(0)
+        if punto < 0x20:  # un control crudo invalidaría el JSON: se deja igual
+            return m.group(0)
+        try:
+            return chr(punto)
+        except (ValueError, OverflowError):
+            return m.group(0)
+
+    crudo = _ESCAPE_U.sub(_uno, texto)
+    try:
+        return crudo.encode("utf-16", "surrogatepass").decode("utf-16")
+    except UnicodeDecodeError:
+        return crudo
+
+
+def rescatar_mensaje(texto: str) -> str:
+    """Saca el mensaje de un sobre JSON; "" si no hay nada que enviar.
+
+    El modelo escribe Markdown aunque se le pida WhatsApp, y a veces contesta
+    con el sobre de una herramienta ({"action":"reply","text":"…"}). Es la
+    misma clase de fallo: sale bien noventa veces y la noventa y uno no. Se
+    arregla aquí, de forma determinista, y si el sobre no trae texto se
+    devuelve "" para que el turno no mande nada — mejor silencio que llaves.
+    """
+    limpio = _desescapar(texto.strip())
+    candidatos = [limpio]
+    cerca = _SOBRE_JSON.match(limpio)
+    if cerca:
+        candidatos.insert(0, cerca.group(1).strip())
+    for candidato in candidatos:
+        if not candidato.startswith("{"):
+            continue
+        if candidato.endswith("}"):
+            try:
+                datos = json.loads(candidato)
+            except (ValueError, TypeError):
+                datos = None
+            if isinstance(datos, dict):
+                for clave in _CLAVES_TEXTO:
+                    valor = datos.get(clave)
+                    if isinstance(valor, str) and valor.strip():
+                        return valor.strip()
+                return ""
+        # Sobre truncado (JSON inválido o sin cerrar): se rescata a mano.
+        crudo = _TEXTO_CRUDO.search(candidato)
+        if crudo:
+            return crudo.group(1).strip()
+        if '"action"' in candidato:
+            return ""
+    return limpio
 
 
 def a_whatsapp(texto: str) -> str:
     """El texto del modelo, listo para WhatsApp. Idempotente."""
     if not texto:
         return texto
+    texto = rescatar_mensaje(texto)
+    if not texto:
+        return ""
     s = texto.replace("\r\n", "\n").replace("\r", "\n")
     protegidos: list[str] = []
 
