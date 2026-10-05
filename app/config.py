@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     # la bandeja minutos después de que el CRM ya había vuelto.
     relay_backoff_cap_seconds: float = Field(default=60.0, ge=1)
     crm_bot_api_key: str = ""
+    # Envío del dossier como DOCUMENTO (ver app/dossier.py): el API de bot solo
+    # manda texto, así que adjuntar el PDF exige una SESIÓN de usuario del CRM.
+    # Vacío = la función queda apagada y todo sigue exactamente igual que antes.
+    crm_email: str = ""
+    crm_password: str = ""
+    dossier_url: str = ""
 
     # Perfil del negocio (capa de persona; ver app/profile.py)
     agent_name: str = "Nea"  # se usa si el CRM no define nombre

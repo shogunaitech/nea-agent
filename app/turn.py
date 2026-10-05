@@ -20,6 +20,7 @@ from app import media
 from app.agenda import agenda_vigente
 from app.config import canonical_identity
 from app.crm import CrmConflict, CrmError, CrmUnreachable
+from app.dossier import DossierSender, pie_de_dossier
 from app.formato import a_whatsapp
 from app.hostility import ALERT as HOSTILITY_ALERT, hostile_streak
 from app.llm import LlmExhausted
@@ -983,10 +984,43 @@ async def _tool_loop(
 SEND_ATTEMPTS = 4  # backoff 1 s, 2 s, 4 s entre intentos (~7 s en el turno)
 
 
+_REMITENTE_DOSSIER: DossierSender | None = None
+
+
+def _remitente_de_dossier(ctx: AppContext) -> DossierSender | None:
+    """Remitente del dossier, creado una vez por proceso.
+
+    Los ajustes no cambian en caliente, así que se cachea. Si faltan las
+    credenciales (CRM_EMAIL / CRM_PASSWORD / DOSSIER_URL), devuelve None y el
+    dossier sigue saliendo como enlace de siempre.
+    """
+    global _REMITENTE_DOSSIER
+    if _REMITENTE_DOSSIER is None:
+        _REMITENTE_DOSSIER = DossierSender(
+            base_url=getattr(ctx.settings, "crm_base_url", ""),
+            email=getattr(ctx.settings, "crm_email", ""),
+            password=getattr(ctx.settings, "crm_password", ""),
+            dossier_url=getattr(ctx.settings, "dossier_url", ""),
+        )
+        if not _REMITENTE_DOSSIER.activo:
+            logger.info(
+                "dossier: sin credenciales de CRM — seguirá enviándose como enlace"
+            )
+    return _REMITENTE_DOSSIER if _REMITENTE_DOSSIER.activo else None
+
+
 async def _send(ctx: AppContext, conv_id: int, crm_conv_id: str, text: str) -> bool:
     """Envía vía el CRM. Si el turno agota sus reintentos, la respuesta NO se
     descarta: se encola en pending_send y el SenderWorker la reintenta con
     backoff hasta entregar o agotar 24 h (incidente 2026-08-03)."""
+    # Si la respuesta trae el enlace del dossier, se manda como DOCUMENTO en vez
+    # de como enlace (app/dossier.py). Si no se puede, cae al texto de siempre:
+    # el adjunto es una mejora, nunca un requisito.
+    pie = pie_de_dossier(text)
+    if pie is not None:
+        remitente = _remitente_de_dossier(ctx)
+        if remitente is not None and await remitente.enviar(crm_conv_id, pie):
+            return True
     for attempt in range(SEND_ATTEMPTS):
         try:
             await ctx.crm.send_message(crm_conv_id, text)
