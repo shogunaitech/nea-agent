@@ -32,6 +32,11 @@ class ToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
+    # Google (Gemini 3) devuelve una firma en cada llamada a herramienta y exige
+    # que se le devuelva en el turno siguiente. Sin ella, la segunda llamada
+    # falla con 400 «Function call is missing a thought_signature». Los
+    # proveedores que no la mandan la dejan en None y no se envía nada.
+    extra_content: dict[str, Any] | None = None
 
 
 @dataclass
@@ -337,7 +342,15 @@ class OpenAiLlm:
             except (TypeError, ValueError):
                 logger.warning("llm: arguments malformados en %s — uso {}", name)
                 args = {}
+            extra = getattr(tc, "extra_content", None)
+            if extra is None:
+                extra = (getattr(tc, "model_extra", None) or {}).get("extra_content")
             tool_calls.append(
-                ToolCall(id=getattr(tc, "id", "") or "", name=name, arguments=args)
+                ToolCall(
+                    id=getattr(tc, "id", "") or "",
+                    name=name,
+                    arguments=args,
+                    extra_content=extra if isinstance(extra, dict) else None,
+                )
             )
         return LlmReply(content=content, tool_calls=tool_calls)

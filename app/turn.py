@@ -963,6 +963,13 @@ async def _tool_loop(
                             "name": tc.name,
                             "arguments": json.dumps(tc.arguments, ensure_ascii=False),
                         },
+                        # La firma de Google viaja con la llamada: si no se le
+                        # devuelve, el turno siguiente falla con 400.
+                        **(
+                            {"extra_content": tc.extra_content}
+                            if getattr(tc, "extra_content", None)
+                            else {}
+                        ),
                     }
                     for tc in reply.tool_calls
                 ],
