@@ -517,7 +517,8 @@ async def test_media_caida_degrada_honesto(ctx, client, respx_mock):
         for m in ctx.llm.calls[0]["messages"]
         if m["role"] == "user"
     )
-    assert "NO pudiste abrir" in user_texts  # marcador honesto
+    assert "NO pudiste escucharla" in user_texts  # marcador honesto de audio
+    assert "otra nota de voz" in user_texts  # y no se le pide repetir el audio
 
 
 async def test_reset_no_depende_de_la_allowlist_de_respuesta(respx_mock):
