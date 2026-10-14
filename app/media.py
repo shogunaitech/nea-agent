@@ -70,12 +70,30 @@ def _honest_failure(msg: InboundMessage) -> MediaPart:
     )
 
 
+def _audio_failure(msg: InboundMessage) -> MediaPart:
+    """Nota de voz que no se pudo escuchar (formato raro o transcripción caída).
+
+    No se le pide otra nota de voz: volvería a fallar igual. Se le pide texto
+    y se le ofrece agendar la llamada.
+    """
+    return MediaPart(
+        text=(
+            "[El lead mandó una nota de voz y NO pudiste escucharla."
+            f"{_caption_line(msg, 'ese audio')} Dile con naturalidad, en una"
+            " línea y sin tecnicismos, que lo sientes y que los mensajes de"
+            " audio no te llegan bien, y pídele que te escriba por aquí lo que"
+            " necesita. Ofrécele además agendar una llamada de 30 minutos si"
+            " prefiere contarlo hablando. NO le pidas otra nota de voz.]"
+        )
+    )
+
+
 async def _audio(ctx: AppContext, msg: InboundMessage) -> MediaPart:
     if not msg.media_id:
-        return _honest_failure(msg)
+        return _audio_failure(msg)
     data, mime = await ctx.crm.get_media(msg.media_id)
     if len(data) > MAX_MEDIA_BYTES:
-        return _honest_failure(msg)
+        return _audio_failure(msg)
     mime_clean = (mime or msg.media_mime or "audio/ogg").split(";")[0].strip()
     ext = _AUDIO_EXT.get(mime_clean, "ogg")
     transcript = await ctx.llm.transcribe(
@@ -236,4 +254,6 @@ async def describe_item(ctx: AppContext, msg: InboundMessage) -> MediaPart:
             msg.type,
             msg.media_id,
         )
+        if msg.type == "audio":
+            return _audio_failure(msg)
         return _honest_failure(msg)
