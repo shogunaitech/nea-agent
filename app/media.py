@@ -65,7 +65,7 @@ def _honest_failure(msg: InboundMessage) -> MediaPart:
         text=(
             f"[El lead mandó {que} que NO pudiste abrir/procesar."
             f"{_caption_line(msg, 'ese contenido')} Sé honesta: dile que no lo"
-            " pudiste abrir y pídele el contenido en texto o nota de voz.]"
+            " pudiste abrir y pídele que te lo cuente por escrito.]"
         )
     )
 
@@ -216,8 +216,8 @@ async def _video(ctx: AppContext, msg: InboundMessage) -> MediaPart:
     return MediaPart(
         text=(
             "[El lead mandó un video — NO puedes ver videos todavía."
-            f"{_caption_line(msg, 'el video')} Sé honesta y ofrécele que te lo"
-            " cuente en texto o con una nota de voz (esas sí las entiendes).]"
+            f"{_caption_line(msg, 'el video')} Sé honesta: dile que te lo"
+            " cuente por escrito, o que te pida una llamada si prefiere hablarlo.]"
         )
     )
 
@@ -226,7 +226,7 @@ async def _fallback(ctx: AppContext, msg: InboundMessage) -> MediaPart:
     return MediaPart(
         text=(
             f"[El lead mandó contenido que no puedes ver (tipo: {msg.type})."
-            " Sé honesta: pídele que te lo mande como texto o nota de voz.]"
+            " Sé honesta: pídele que te lo cuente por escrito.]"
         )
     )
 
