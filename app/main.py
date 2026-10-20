@@ -22,7 +22,6 @@ from app.agenda import SondaDeAgenda
 from app.coalesce import Coalescer
 from app.config import Settings
 from app.crm import CrmClient
-from app.crm_brains import BrainsCrmClient
 from app.dispatch import router as dispatch_router
 from app.dispatch_worker import run as run_dispatch_worker
 from app.db import PgStore
@@ -149,11 +148,12 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
                 )
                 crm = CrmSinOrganizacion()
             elif settings.cloud_mode:
-                crm = BrainsCrmClient(
-                    settings.crm_base_url,
-                    settings.crm_brain_secret,
-                    settings.crm_organization,
-                )
+                # Despacho single-tenant: el vocero-crm self-hosted contesta en
+                # la superficie /api/bot/* (neutra de canal), no en /api/brains/*
+                # (esa es de Vocero Cloud multitenant). Un cerebro de un solo
+                # negocio contesta por CrmClient; la firma del despacho se sigue
+                # verificando con crm_brain_secret en app/dispatch.py.
+                crm = CrmClient(settings.crm_base_url, settings.crm_bot_api_key)
             else:
                 crm = CrmClient(settings.crm_base_url, settings.crm_bot_api_key)
             app.state.ctx = AppContext(
